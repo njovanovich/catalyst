@@ -1,0 +1,6 @@
+INSTALL
+-------
+
+1. Downloaded and run VirtualBox Ubuntu 18.04.3 Bionic Beaver from https://www.osboxes.org/ubuntu/
+2. apt-get install php7.2
+3. apt-get install git
