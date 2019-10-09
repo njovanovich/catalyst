@@ -10,12 +10,20 @@
 class UserUploadByCsv{
 
     /**
+     * @var string Database name
+     * This is an assumption, it can be easily added in the code.
+     * The requirements do not offer a command line parameter for DB Name,
+     * so this has been added in here for the time being.
+     */
+    const DB_NAME = "users";
+
+    /**
      * @var string Database table name
      */
     const DB_TABLE = "users";
 
     /**
-     * @var object dbConnection The connection to the database
+     * @var mysqli dbConnection The connection to the database
      */
     private $dbConnection;
 
@@ -44,10 +52,10 @@ class UserUploadByCsv{
                 || !in_array("password", $dbValues)) {
             throw new \Exception("DB values not complete");
         }
-        $this->dbConnection = new mysqli($dbValues['host'], $dbValues['username'], $dbValues['password']);
+        $this->dbConnection = new mysqli($dbValues['host'], $dbValues['username'], $dbValues['password'],
+            UserUploadByCsv::DB_NAME);
         if (mysqli_connect_errno()) {
-            printf("Connect failed: %s\n", mysqli_connect_error());
-            exit();
+            throw new \Exception("Connect failed: %s\n", mysqli_connect_error());
         }
     }
 
@@ -58,7 +66,20 @@ class UserUploadByCsv{
     public function createTable($databaseName="users")
     {
         if ($this->dbConnection) {
-            $this->dbConnection->select_db("world");
+            $this->dbConnection->select_db($databaseName);
+
+            $sql = <<<EOT
+DROP TABLE IF EXISTS `users`;
+CREATE TABLE `users` (
+  `name` varchar(255) NOT NULL,
+  `surname` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE `users`
+  ADD UNIQUE KEY `email unique` (`email`);
+COMMIT;
+EOT;
+
         }
     }
 
@@ -89,12 +110,22 @@ class UserUploadByCsv{
     }
 
     /**
-     * Enters a row into the db
+     * Validates the input, formats it and enters a row into the db
      * @param $row array The csv row values
      */
     private function csvRowToDb($row)
     {
-        
+        // validate input
+
+
+        // format input
+
+        // process
+        $sql = "INSERT INTO " . UserUploadByCsv::DB_TABLE . "(name, surname,email)
+                    VALUES (?,?,?)";
+        $statement = $this->dbConnection->prepare($sql);
+        $statement->bind_param("s", $row["name"], $row["surname"], $row["email"]);
+
     }
 
     /**
@@ -151,8 +182,14 @@ if ($csvFilename)
     {
         try{
             $upload = new UserUploadByCsv($csvFilename);
+            $upload->connectDb($options);
+            if (!in_array($options, "dry_run"))
+            {
+                $upload->createTable();
+                $upload->process();
+            }
         }catch(\Exception $ex){
-
+            echo $ex->getMessage() . "\n";
         }
     } else {
         echo "File $csvFilename does not exist.\n";
@@ -164,8 +201,9 @@ if ($csvFilename)
         try {
             $upload = new UserUploadByCsv();
             $upload->connectDb($options);
+            $upload->createTable();
         }catch(\Exception $ex){
-
+            echo $ex->getMessage() . "\n";
         }
     } else {
         echo "Filename not supplied.\n";
