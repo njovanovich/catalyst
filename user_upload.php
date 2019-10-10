@@ -28,17 +28,23 @@ class UserUploadByCsv{
     private $dbConnection;
 
     /**
-     * @var string
+     * @var string The filename of the csv file for processing
      */
     private $csvFilename;
+
+    /**
+     * @var bool Is this a dry run or not?
+     */
+    private $isDryRun;
 
     /**
      * UserUploadByCsv constructor.
      * @param $csvFilename string The csv filename
      */
-    function __construct($csvFilename="")
+    function __construct($csvFilename="", $isDryRun=false)
     {
         $this->csvFilename = $csvFilename;
+        $this->isDryRun = $isDryRun;
     }
 
     /**
@@ -52,7 +58,7 @@ class UserUploadByCsv{
                 || !in_array("password", array_keys($dbValues))) {
             throw new \Exception("Missing database values");
         }
-        $this->dbConnection = new \mysqli($dbValues['host'], $dbValues['username'], $dbValues['password'],
+        $this->dbConnection = @new \mysqli($dbValues['host'], $dbValues['username'], $dbValues['password'],
             UserUploadByCsv::DB_NAME);
         if (mysqli_connect_errno()) {
             throw new \Exception("Database connection failed: " . mysqli_connect_error());
@@ -61,6 +67,7 @@ class UserUploadByCsv{
 
     /**
      * Creates the database table.
+     * @throws Exception
      */
     public function createTable()
     {
@@ -78,6 +85,7 @@ EOT;
             {
                 throw new \Exception("Cannot create database table `users`");
             } else {
+                // free the results of the queries
                 do {
                     $result = $this->dbConnection->store_result();
                     if ($result)
@@ -115,6 +123,9 @@ EOT;
             }
             fclose($handle);
         }
+
+        // close the connection, we are done!
+        $this->dbConnection->close();
     }
 
     /**
@@ -155,15 +166,15 @@ EOT;
     public static function displayHelp()
     {
         $helpMessage = <<<EOT
-This script should include these command line options (directives):
+This script includes the command line options (directives):
   --file [csv file name] – this is the name of the CSV to be parsed
   --create_table – this will cause the MySQL users table to be built (and no further action will be taken)
-  --dry_run – this will be used with the --file directive in case we want to run the script but not insert into the DB.  
-All other functions will be executed, but the database won't be altered
+  --dry_run – this will be used with the --file directive in case we want to run the script but not insert into the DB. All other functions will be executed, but the database won't be altered
   -u – MySQL username
   -p – MySQL password
   -h – MySQL host
   --help – which will output the above list of directives with details.
+
 EOT;
         echo $helpMessage;
     }
@@ -198,39 +209,38 @@ if (in_array($key, array_keys($options)))
     $csvFilename = $options[$key];
 }
 
-if ($csvFilename)
+// if create table is not applied, process the file
+if (!in_array("create_table", array_keys($options)))
 {
-    if (file_exists($csvFilename))
+    // check to see if the filename is supplied
+    if ($csvFilename)
     {
-        try{
-            $upload = new UserUploadByCsv($csvFilename);
-            $upload->connectDb($dbValues);
-            if (!in_array("dry_run", array_keys($options)))
-            {
+        if (file_exists($csvFilename))
+        {
+            try{
+                $isDryRun = in_array("dry_run", array_keys($options));
+                $upload = new UserUploadByCsv($csvFilename, $isDryRun);
+                $upload->connectDb($dbValues);
                 $upload->createTable();
                 $upload->process();
+            }catch(\Exception $ex){
+                echo $ex->getMessage() . "\n";
             }
-        }catch(\Exception $ex){
-            echo $ex->getMessage() . "\n";
+        } else {
+            echo "$csvFilename does not exist.\n";
         }
     } else {
-        echo "File $csvFilename does not exist.\n";
-    }
-
-} else {
-    if (in_array("create_table", array_keys($options)))
-    {
-        try {
-            $upload = new UserUploadByCsv();
-            $upload->connectDb($dbValues);
-            $upload->createTable();
-        }catch(\Exception $ex){
-            echo $ex->getMessage() . "\n";
-        }
-    } else {
-        echo "Filename not supplied.\n";
-        UserUploadByCsv::displayHelp();
+        echo "Filename not supplied. See --help\n";
         exit();
+    }
+} else {
+    // just create the table
+    try {
+        $upload = new UserUploadByCsv();
+        $upload->connectDb($dbValues);
+        $upload->createTable();
+    }catch(\Exception $ex){
+        echo $ex->getMessage() . "\n";
     }
 }
 
