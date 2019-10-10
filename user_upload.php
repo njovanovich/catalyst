@@ -158,23 +158,26 @@ EOT;
         $row["email"] = strtolower($row["email"]);
 
         // process
-        $sql = "INSERT INTO " . UserUploadByCsv::DB_TABLE . "(`name`,`surname`,`email`)
-                    VALUES (?,?,?)";
-        $statement = $this->dbConnection->prepare($sql);
-        if ($statement)
+        if (!$this->isDryRun)
         {
-            $statement->bind_param("sss", $row["name"], $row["surname"], $row["email"]);
-            $result = $statement->execute();
-            if(!$result)
+            $sql = "INSERT INTO " . UserUploadByCsv::DB_TABLE . "(`name`,`surname`,`email`)
+                    VALUES (?,?,?)";
+            $statement = $this->dbConnection->prepare($sql);
+            if ($statement)
             {
-                // this area is hit if the statement fails, currently fails on duplicate emails
-                // will do nothing except fail silently as spec does not ask for warning on this
-                // issue
-                // $email = $row["email"];
-                // echo "Warning: Insert failed! Possible cause duplicate email ($email)\n";
+                $statement->bind_param("sss", $row["name"], $row["surname"], $row["email"]);
+                $result = $statement->execute();
+                if(!$result)
+                {
+                    // this area is hit if the statement fails, currently fails on duplicate emails
+                    // will do nothing except fail silently as spec does not ask for warning on this
+                    // issue
+                    // $email = $row["email"];
+                    // echo "Warning: Insert failed! Possible cause duplicate email ($email)\n";
+                }
+            } else {
+                echo "Error: " . $this->dbConnection->error . "\n";
             }
-        } else {
-            echo "Error: " . $this->dbConnection->error . "\n";
         }
     }
 
