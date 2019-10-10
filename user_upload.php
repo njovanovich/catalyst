@@ -48,26 +48,23 @@ class UserUploadByCsv{
      */
     public function connectDb(array $dbValues)
     {
-        if (!in_array("host", $dbValues) || !in_array("username", $dbValues)
-                || !in_array("password", $dbValues)) {
-            throw new \Exception("DB values not complete");
+        if (!in_array("host", array_keys($dbValues)) || !in_array("username", array_keys($dbValues))
+                || !in_array("password", array_keys($dbValues))) {
+            throw new \Exception("Missing database values");
         }
-        $this->dbConnection = new mysqli($dbValues['host'], $dbValues['username'], $dbValues['password'],
+        $this->dbConnection = new \mysqli($dbValues['host'], $dbValues['username'], $dbValues['password'],
             UserUploadByCsv::DB_NAME);
         if (mysqli_connect_errno()) {
-            throw new \Exception("Connect failed: %s\n", mysqli_connect_error());
+            throw new \Exception("Database connection failed: " . mysqli_connect_error());
         }
     }
 
     /**
      * Creates the database table.
-     * @var $databaseName string Database Name
      */
-    public function createTable($databaseName="users")
+    public function createTable()
     {
         if ($this->dbConnection) {
-            $this->dbConnection->select_db($databaseName);
-
             $sql = <<<EOT
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
@@ -75,11 +72,21 @@ CREATE TABLE `users` (
   `surname` varchar(255) NOT NULL,
   `email` varchar(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-ALTER TABLE `users`
-  ADD UNIQUE KEY `email unique` (`email`);
-COMMIT;
+ALTER TABLE `users` ADD UNIQUE KEY `email unique` (`email`);
 EOT;
+            if( $this->dbConnection->multi_query($sql) === FALSE)
+            {
+                throw new \Exception("Cannot create database table `users`");
+            } else {
+                do {
+                    $result = $this->dbConnection->store_result();
+                    if ($result)
+                    {
+                        $result->free();
+                    }
 
+                } while ($this->dbConnection->next_result());
+            }
         }
     }
 
@@ -96,10 +103,11 @@ EOT;
                 if (!$rows)
                 {
                     $headers = $data;
+                    $headers[2] = trim($headers[2]);
                 } else {
                     $rowData = array();
                     for ($c=0; $c < count($data); $c++) {
-                        $rowData[$headers[$c]] = $data[$c];
+                        $rowData[$headers[$c]] = trim($data[$c]);
                     }
                     $this->csvRowToDb($rowData);
                 }
@@ -116,16 +124,29 @@ EOT;
     private function csvRowToDb($row)
     {
         // validate input
-
+        // apparently exclamation marks are legit for email addresses - https://answers.yahoo.com/question/index?qid=20100803050517AAdtLKu
+        if(!filter_var($row["email"], FILTER_VALIDATE_EMAIL))
+        {
+            echo "Email ". $row["email"]. " is not valid, skipping row.\n" ;
+            return;
+        }
 
         // format input
+        $row["name"] = ucwords(strtolower($row["name"]), " \t\r\n\f\v'");
+        $row["surname"] = ucwords(strtolower($row["surname"]), " \t\r\n\f\v'");
+        $row["email"] = strtolower($row["email"]);
 
         // process
-        $sql = "INSERT INTO " . UserUploadByCsv::DB_TABLE . "(name, surname,email)
+        $sql = "INSERT INTO " . UserUploadByCsv::DB_TABLE . "(`name`,`surname`,`email`)
                     VALUES (?,?,?)";
         $statement = $this->dbConnection->prepare($sql);
-        $statement->bind_param("s", $row["name"], $row["surname"], $row["email"]);
-
+        if ($statement)
+        {
+            $statement->bind_param("sss", $row["name"], $row["surname"], $row["email"]);
+            $result = $statement->execute();
+        } else {
+            echo "Error: " . $this->dbConnection->error . "\n";
+        }
     }
 
     /**
@@ -152,26 +173,27 @@ EOT;
 /**
  * Execute the script.
  */
-$options = getopt("u:p:h", ["file:","help","create_table:","dry_run"]);
-print_r($options);exit();
+$options = getopt("u:h:p:", ["file:","help","create_table","dry_run"]);
 
-if (in_array("--help", $argv))
+if (in_array("help", array_keys($options)))
 {
     UserUploadByCsv::displayHelp();
     exit();
 }
 
 $dbValues = array();
-if (in_array("h", $options) && in_array("u", $options) && in_array("p", $options))
+if (in_array("h", array_keys($options)) && in_array("u", array_keys($options))
+        && in_array("p", array_keys($options)))
 {
     $dbValues["host"] = $options["h"];
     $dbValues["username"] = $options["u"];
-    $dbValues["password"] = $options["p"];
+    $dbValues["password"] = $options["p"] ? $options["p"] : '';
 }
 
+// get csv filename
 $csvFilename = "";
 $key = "file";
-if (in_array(array_keys($options), $key))
+if (in_array($key, array_keys($options)))
 {
     $csvFilename = $options[$key];
 }
@@ -182,8 +204,8 @@ if ($csvFilename)
     {
         try{
             $upload = new UserUploadByCsv($csvFilename);
-            $upload->connectDb($options);
-            if (!in_array($options, "dry_run"))
+            $upload->connectDb($dbValues);
+            if (!in_array("dry_run", array_keys($options)))
             {
                 $upload->createTable();
                 $upload->process();
@@ -196,11 +218,11 @@ if ($csvFilename)
     }
 
 } else {
-    if ($options["create_table"])
+    if (in_array("create_table", array_keys($options)))
     {
         try {
             $upload = new UserUploadByCsv();
-            $upload->connectDb($options);
+            $upload->connectDb($dbValues);
             $upload->createTable();
         }catch(\Exception $ex){
             echo $ex->getMessage() . "\n";
