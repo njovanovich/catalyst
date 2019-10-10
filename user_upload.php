@@ -48,6 +48,25 @@ class UserUploadByCsv{
     }
 
     /**
+     * Echos help message.
+     */
+    public static function displayHelp()
+    {
+        $helpMessage = <<<EOT
+This script includes the command line options (directives):
+  --file [csv file name] – this is the name of the CSV to be parsed
+  --create_table – this will cause the MySQL users table to be built (and no further action will be taken)
+  --dry_run – this will be used with the --file directive in case we want to run the script but not insert into the DB. All other functions will be executed, but the database won't be altered
+  -u – MySQL username
+  -p – MySQL password
+  -h – MySQL host
+  --help – which will output the above list of directives with details.
+
+EOT;
+        echo $helpMessage;
+    }
+
+    /**
      * Function for connecting to the database
      * @param $dbValues array Array of values to connect to the database
      * @throws Exception
@@ -85,19 +104,10 @@ EOT;
             {
                 throw new \Exception("Cannot create database table `users`");
             } else {
-                // free the results of the queries
-                do {
-                    $result = $this->dbConnection->store_result();
-                    if ($result)
-                    {
-                        $result->free();
-                    }
-
-                } while ($this->dbConnection->next_result());
+                while ($this->dbConnection->next_result()) {;} // flush multi_queries
             }
         }
     }
-
 
     /**
      * Process the file
@@ -155,28 +165,17 @@ EOT;
         {
             $statement->bind_param("sss", $row["name"], $row["surname"], $row["email"]);
             $result = $statement->execute();
+            if(!$result)
+            {
+                // this area is hit if the statement fails, currently fails on duplicate emails
+                // will do nothing except fail silently as spec does not ask for warning on this
+                // issue
+                // $email = $row["email"];
+                // echo "Warning: Insert failed! Possible cause duplicate email ($email)\n";
+            }
         } else {
             echo "Error: " . $this->dbConnection->error . "\n";
         }
-    }
-
-    /**
-     * Echos help message.
-     */
-    public static function displayHelp()
-    {
-        $helpMessage = <<<EOT
-This script includes the command line options (directives):
-  --file [csv file name] – this is the name of the CSV to be parsed
-  --create_table – this will cause the MySQL users table to be built (and no further action will be taken)
-  --dry_run – this will be used with the --file directive in case we want to run the script but not insert into the DB. All other functions will be executed, but the database won't be altered
-  -u – MySQL username
-  -p – MySQL password
-  -h – MySQL host
-  --help – which will output the above list of directives with details.
-
-EOT;
-        echo $helpMessage;
     }
 
 }
@@ -185,16 +184,17 @@ EOT;
  * Execute the script.
  */
 $options = getopt("u:h:p:", ["file:","help","create_table","dry_run"]);
+$optionsKeys = array_keys($options);
 
-if (in_array("help", array_keys($options)))
+if (in_array("help", $optionsKeys))
 {
     UserUploadByCsv::displayHelp();
     exit();
 }
 
 $dbValues = array();
-if (in_array("h", array_keys($options)) && in_array("u", array_keys($options))
-        && in_array("p", array_keys($options)))
+if (in_array("h", $optionsKeys) && in_array("u", $optionsKeys)
+        && in_array("p", $optionsKeys))
 {
     $dbValues["host"] = $options["h"];
     $dbValues["username"] = $options["u"];
@@ -204,13 +204,13 @@ if (in_array("h", array_keys($options)) && in_array("u", array_keys($options))
 // get csv filename
 $csvFilename = "";
 $key = "file";
-if (in_array($key, array_keys($options)))
+if (in_array($key, $optionsKeys))
 {
     $csvFilename = $options[$key];
 }
 
 // if create table is not applied, process the file
-if (!in_array("create_table", array_keys($options)))
+if (!in_array("create_table", $optionsKeys))
 {
     // check to see if the filename is supplied
     if ($csvFilename)
@@ -218,7 +218,7 @@ if (!in_array("create_table", array_keys($options)))
         if (file_exists($csvFilename))
         {
             try{
-                $isDryRun = in_array("dry_run", array_keys($options));
+                $isDryRun = in_array("dry_run", $optionsKeys);
                 $upload = new UserUploadByCsv($csvFilename, $isDryRun);
                 $upload->connectDb($dbValues);
                 $upload->createTable();
